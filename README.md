@@ -70,3 +70,15 @@ Outputs:
 
 files_bucket = the-filez-bucket
 ```
+
+Here is what a templated file might look like:
+```!tf
+terraform {
+  backend "s3" {
+    bucket         = "{{ os.environ["TERRAFORM_STATE_BUCKET"] -}}"
+    key            = "state.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "pop-and-lock"
+  }
+}
+```
