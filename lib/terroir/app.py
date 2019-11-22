@@ -14,6 +14,8 @@ class App(object):
         if template_variables is None:
             template_variables = {}
 
+        exitstatus = 0
+
         tf_files = []
         tfbak_files = []
         for name in os.listdir():
@@ -63,7 +65,7 @@ class App(object):
 
                     tf_fp.write(rendered)
 
-            self.run_terraform(sys.argv[1:])
+            exitstatus, _ = self.run_terraform(sys.argv[1:])
 
         finally:
             for tf_file in tf_files:
@@ -72,7 +74,7 @@ class App(object):
                     shutil.copyfile(tfbak_file, tf_file)
                     os.unlink(tfbak_file)
 
-        return 0
+        return exitstatus
 
     def restore_tfbak_files(self, tfbak_files):
         for tfbak_file in tfbak_files:
@@ -161,4 +163,4 @@ class App(object):
         # cleanup
         cleanup()
 
-        return capture.buffer.getvalue()
+        return process.exitstatus, capture.buffer.getvalue()
