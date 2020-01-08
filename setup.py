@@ -1,11 +1,11 @@
-# Copyright 2019, Ryan P. Kelly.
+# Copyright 2019-2020, Ryan P. Kelly.
 
 from setuptools import setup
 
 
 setup(
     name="terroir",
-    version="0.3",
+    version="0.4",
     description="terraform templating wrapper",
     author="Ryan P. Kelly",
     author_email="ryan@ryankelly.us",

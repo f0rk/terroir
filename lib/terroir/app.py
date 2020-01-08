@@ -10,6 +10,28 @@ import pexpect
 
 class App(object):
 
+    def render(self, tf_file, template_variables):
+
+        with open(tf_file, "rt") as tf_fp:
+            env = jinja2.Environment(
+                loader=jinja2.BaseLoader,
+                undefined=jinja2.StrictUndefined,
+            )
+            template = env.from_string(tf_fp.read())
+
+        try:
+            rendered = template.render(
+                **template_variables,
+            )
+
+            return rendered
+        except jinja2.exceptions.UndefinedError:
+            sys.stderr.write(
+                "(hint: did you forget define a variable?)\n"
+            )
+            sys.stderr.flush()
+            raise
+
     def run(self, template_variables=None):
         if template_variables is None:
             template_variables = {}
@@ -44,25 +66,8 @@ class App(object):
                 tfbak_file = tf_file + "bak"
                 shutil.copyfile(tf_file, tfbak_file)
 
-                with open(tf_file, "rt") as tf_fp:
-                    env = jinja2.Environment(
-                        loader=jinja2.BaseLoader,
-                        undefined=jinja2.StrictUndefined,
-                    )
-                    template = env.from_string(tf_fp.read())
-
+                rendered = self.render(tf_file, template_variables)
                 with open(tf_file, "wt") as tf_fp:
-                    try:
-                        rendered = template.render(
-                            **template_variables,
-                        )
-                    except jinja2.exceptions.UndefinedError:
-                        sys.stderr.write(
-                            "(hint: did you forget define a variable?)\n"
-                        )
-                        sys.stderr.flush()
-                        raise
-
                     tf_fp.write(rendered)
 
             exitstatus, _ = self.run_terraform(sys.argv[1:])
@@ -84,7 +89,7 @@ class App(object):
             shutil.copyfile(tfbak_file, tf_file)
             os.unlink(tfbak_file)
 
-    def run_terraform(self, args, retries_remaining=2):
+    def run_terraform(self, args, retries_remaining=2, echo_output=True):
 
         class Capture(object):
 
