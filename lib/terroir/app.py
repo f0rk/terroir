@@ -82,7 +82,7 @@ class App(object):
                 if os.path.exists('.terraform.lock.hcl'):
                     os.unlink('.terraform.lock.hcl')
                 if os.path.exists('.terraform') and os.path.isdir('.terraform'):
-                    os.unlink('.terraform')
+                    shutil.rmtree('.terraform')
 
         return exitstatus
 
