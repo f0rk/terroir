@@ -78,6 +78,11 @@ class App(object):
                 if os.path.exists(tfbak_file):
                     shutil.copyfile(tfbak_file, tf_file)
                     os.unlink(tfbak_file)
+            if sys.argv[1] == "apply":
+                if os.path.exists('.terraform.lock.hcl'):
+                    os.unlink('.terraform.lock.hcl')
+                if os.path.exists('.terraform') and os.path.isdir('.terraform'):
+                    shutil.rmtree('.terraform')
 
         return exitstatus
 
