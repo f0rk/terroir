@@ -82,9 +82,9 @@ class App(object):
                 if os.path.exists(".terraform.lock.hcl"):
                     os.unlink(".terraform.lock.hcl")
                 if os.path.exists(".terraform") and os.path.isdir(".terraform"):
-                    # there's a bug with virtualbox and windows that makes shutil.rmtree() to throw an error
+                    # there's a bug with virtualbox and windows that makes rmtree() throw an error
                     # see: https://www.virtualbox.org/ticket/19004?cversion=0&cnum_hist=2
-                    # we handle that by catching OSError and using alternative deletion method
+                    # we handle this by catching OSError and by using alternative deletion method
                     try:
                         shutil.rmtree(".terraform")
                     except OSError:
