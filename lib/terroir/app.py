@@ -134,6 +134,7 @@ class App(object):
 
         expected_text = [
             "initialization required",
+            "Module not installed",
             "Enter a value:",
             pexpect.EOF,
         ]
@@ -141,7 +142,7 @@ class App(object):
         found_index = process.expect(expected_text)
 
         # initialization required, run to completion, re-call with init
-        if found_index == 0:
+        if found_index in (0, 1):
 
             cleanup()
 
@@ -162,12 +163,12 @@ class App(object):
             )
 
         # user needs to type
-        elif found_index == 1:
+        elif found_index == 2:
             answer = input("")
             process.sendline(answer)
 
         # program ran to completion, no input needed
-        elif found_index == 2:
+        elif found_index == 3:
             pass
 
         else:

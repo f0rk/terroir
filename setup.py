@@ -5,7 +5,7 @@ from setuptools import setup
 
 setup(
     name="terroir",
-    version="0.6",
+    version="0.7",
     description="terraform templating wrapper",
     author="Ryan P. Kelly",
     author_email="ryan@ryankelly.us",
