@@ -70,7 +70,11 @@ class App(object):
                 with open(tf_file, "wt") as tf_fp:
                     tf_fp.write(rendered)
 
-            exitstatus, _ = self.run_terraform(sys.argv[1:])
+            if sys.argv[1] == "--":
+                # Have to pass command within ""
+                exitstatus, _ = self.run_command(sys.argv[2])
+            else:
+                exitstatus, _ = self.run_terraform(sys.argv[1:])
 
         finally:
             for tf_file in tf_files:
@@ -99,6 +103,11 @@ class App(object):
 
             shutil.copyfile(tfbak_file, tf_file)
             os.unlink(tfbak_file)
+
+    def run_command(self, args, echo_output=True):
+        # Allows users to interact with the infracost tool, by passing any command
+        # they'd like within "" after the initial --
+        os.system(args)
 
     def run_terraform(self, args, retries_remaining=2, echo_output=True):
 
