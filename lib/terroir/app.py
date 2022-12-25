@@ -70,7 +70,10 @@ class App(object):
                 with open(tf_file, "wt") as tf_fp:
                     tf_fp.write(rendered)
 
-            exitstatus, _ = self.run_terraform(sys.argv[1:])
+            if sys.argv[1] == "--":
+                exitstatus, _ = self.run_command(sys.argv[2:])
+            else:
+                exitstatus, _ = self.run_terraform(sys.argv[1:])
 
         finally:
             for tf_file in tf_files:
@@ -181,3 +184,15 @@ class App(object):
         cleanup()
 
         return process.exitstatus, capture.buffer.getvalue()
+
+    def run_command(self, args):
+
+        exec_path = args[0]
+        if not "/" in exec_path:
+            maybe_exec_path = shutil.which(exec_path)
+            if maybe_exec_path:
+                exec_path = maybe_exec_path
+
+        exitstatus = os.spawnvp(os.P_WAIT, exec_path, args)
+
+        return exitstatus, None
