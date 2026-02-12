@@ -3,6 +3,8 @@ import os
 import re
 import shutil
 import sys
+import importlib.util
+from pathlib import Path
 
 import jinja2
 import pexpect
@@ -18,6 +20,10 @@ class App(object):
                 undefined=jinja2.StrictUndefined,
             )
             template = env.from_string(tf_fp.read())
+
+        custom_functions_dir = os.environ.get("TERROIR_CUSTOM_FUNCTIONS_DIR", None)
+        if custom_functions_dir is not None:
+            self.register_custom_functions(env, custom_functions_dir)
 
         try:
             rendered = template.render(
@@ -197,3 +203,40 @@ class App(object):
         exitstatus = os.spawnvp(os.P_WAIT, exec_path, args)
 
         return exitstatus, None
+
+    def register_custom_functions(self, env, custom_functions_dir):
+        for path in Path(custom_functions_dir).glob("*.py"):
+            spec = importlib.util.spec_from_file_location(path.stem, path)
+
+            if spec is None or spec.loader is None:
+                sys.stdout.write(
+                    f"Warning: spec not found for custom function at {path}")
+                sys.stdout.flush()
+                continue
+
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            if not hasattr(module, "main"):
+                raise ImportError(
+                    f"Custom function at {path} is missing the required "
+                    "'main' function"
+                )
+
+            if not callable(module.main):
+                raise ImportError(
+                    f"Custom function at {path} has an invalid 'main' "
+                    "attribute. It must be a function"
+                )
+
+            name = path.stem
+            if hasattr(module, "name"):
+                name = module.name
+
+            if not name.isidentifier():
+                raise ImportError(
+                    f"Custom function at {path} has an invlid name. It must "
+                    "be a valid identifier"
+                )
+
+            env.globals[name] = module.main

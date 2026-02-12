@@ -82,3 +82,38 @@ terraform {
   }
 }
 ```
+
+Custom Functions:
+-----------------
+
+You can provide a path to `terroir` that contains custom functions that will be
+made available to your templates by setting the `TERROIR_CUSTOM_FUNCTIONS_DIR`
+environment variable. This path can contain Python to be loaded, and they must
+end in `.py` to be loaded.
+
+Each file must contain a function called `main`. The name of the function in
+your templates will be the name of the file minus the extension. For example, a
+file named `example.py` will be available in your templates as `example`. You
+can optionally define a `name` attribute in the file, in which case that will
+be used instead of the filename.
+
+Given the following file in `~/custom_functions/my_function.py`:
+```python
+import os
+
+# uncomment this line to assign the function to the name `different_name`
+# name = "different_name"
+
+def main():
+    return f"Hello, {os.getlogin()}"
+```
+
+you could use it in your templates like this:
+```jinja2
+{{ my_function() }}
+```
+
+and making terroir aware of your custom functcion directory:
+```
+$ TERROIR_CUSTOM_FUNCTIONS_DIR="${HOME}/custom_functions" terroir plan
+```
