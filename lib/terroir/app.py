@@ -263,6 +263,9 @@ class App(object):
 
     def register_custom_functions(self, env, custom_functions_dir):
         for path in Path(custom_functions_dir).glob("*.py"):
+            if path.stem == "__init__":
+                continue
+
             spec = importlib.util.spec_from_file_location(path.stem, path)
 
             if spec is None or spec.loader is None:
