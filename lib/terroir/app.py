@@ -270,7 +270,10 @@ class App(object):
 
             if spec is None or spec.loader is None:
                 sys.stdout.write(
-                    f"Warning: spec not found for custom function at {path}")
+                    "Warning: spec not found for custom function at {}".format(
+                        path
+                    )
+                )
                 sys.stdout.flush()
                 continue
 
@@ -279,14 +282,14 @@ class App(object):
 
             if not hasattr(module, "main"):
                 raise ImportError(
-                    f"Custom function at {path} is missing the required "
-                    "'main' function"
+                    "Custom function at {} is missing the ".format(path)
+                    + "required 'main' function"
                 )
 
             if not callable(module.main):
                 raise ImportError(
-                    f"Custom function at {path} has an invalid 'main' "
-                    "attribute. It must be a function"
+                    "Custom function at {} has an invalid ".format(path)
+                    + "'main' attribute. It must be a function"
                 )
 
             name = path.stem
@@ -295,8 +298,8 @@ class App(object):
 
             if not name.isidentifier():
                 raise ImportError(
-                    f"Custom function at {path} has an invlid name. It must "
-                    "be a valid identifier"
+                    "Custom function at {} has an invlid name. ".format(path)
+                    + "It must be a valid identifier"
                 )
 
             env.globals[name] = module.main
