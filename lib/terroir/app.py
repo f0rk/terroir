@@ -1,8 +1,10 @@
+import importlib
 import io
 import os
 import re
 import shutil
 import sys
+import tomllib
 from pathlib import Path
 
 import jinja2
@@ -47,11 +49,76 @@ class ModuleSourceRewriter:
 
 class App(object):
 
+    config = None
+    plugins = None
+    module_rewriter = None
+
     def __init__(self):
-        self.module_rewriter = None
+        self.load_config()
+        self.load_plugins()
 
         if self.has_git_root():
             self.module_rewriter = ModuleSourceRewriter()
+
+    def load_config(self):
+
+        self.config = []
+
+        current_path = os.getcwd()
+
+        config_files = []
+
+        while True:
+
+            if current_path == "/":
+                break
+
+            maybe_config_path = os.path.join(current_path, ".terroir", "config.toml")
+
+            if os.path.exists(maybe_config_path):
+                config_files.append(maybe_config_path)
+
+            if os.path.exists(os.path.join(current_path, ".git")):
+                break
+
+            current_path, _ = os.path.split(current_path)
+
+        config_files.reverse()
+
+        for config_file in config_files:
+            with open(config_file, "rb") as fp:
+                config = tomllib.load(fp)
+
+                self.config.append((config_file, config))
+
+    def load_plugins(self):
+        self.plugins = []
+
+        for config_path, config in self.config:
+            for plugin_name, plugin_section in config.get("plugins", {}).items():
+                plugin_declaration = plugin_section["plugin"]
+
+                config_dir = os.path.dirname(config_path)
+
+                maybe_plugin_path = os.path.join(config_dir, plugin_declaration)
+
+                if plugin_declaration == "terroir_plugin.py" and os.path.exists(maybe_plugin_path):
+                    try:
+                        sys.path.insert(0, config_dir)
+                        module = importlib.import_module("terroir_plugin")
+                        importlib.reload(module)
+                    finally:
+                        sys.path.remove(config_dir)
+
+                    self.plugins.append(module.Plugin())
+                else:
+                    module_name, plugin_object_name = plugin_declaration.split("::")
+
+                    module = importlib.import_module(module_name)
+
+                    plugin_class = getattr(module, plugin_object_name)
+
+                    self.plugins.append(plugin_class())
 
     def has_git_root(self):
         current = Path.cwd()
@@ -64,6 +131,13 @@ class App(object):
         return None
 
     def render(self, tf_file, template_variables):
+
+        for plugin in self.plugins:
+            if hasattr(plugin, "update_template_variables"):
+                plugin.update_template_variables(
+                    template_variables,
+                    tf_file=tf_file,
+                )
 
         with open(tf_file, "rt") as tf_fp:
             content = tf_fp.read()
@@ -81,6 +155,13 @@ class App(object):
             rendered = template.render(
                 **template_variables,
             )
+
+            for plugin in self.plugins:
+                if hasattr(plugin, "post_render_callback"):
+                    plugin.post_render_callback(
+                        rendered,
+                        tf_file=tf_file,
+                    )
 
             return rendered
         except jinja2.exceptions.UndefinedError:
@@ -140,16 +221,11 @@ class App(object):
                     shutil.copyfile(tfbak_file, tf_file)
                     os.unlink(tfbak_file)
             if sys.argv[1] == "apply":
-                if os.path.exists(".terraform.lock.hcl"):
-                    os.unlink(".terraform.lock.hcl")
                 if os.path.exists(".terraform") and os.path.isdir(".terraform"):
-                    # there's a bug with virtualbox and windows that makes rmtree() throw an error
-                    # see: https://www.virtualbox.org/ticket/19004?cversion=0&cnum_hist=2
-                    # we handle this by catching OSError and by using alternative deletion method
-                    try:
-                        shutil.rmtree(".terraform")
-                    except OSError:
-                        os.system("rm -rf .terraform")
+                    for dirpath, dirnames, filenames in os.walk(".terraform"):
+                        dirnames[:] = [d for d in dirnames if d != "providers"]
+                        for filename in filenames:
+                            os.unlink(os.path.join(dirpath, filename))
 
         return exitstatus
 
