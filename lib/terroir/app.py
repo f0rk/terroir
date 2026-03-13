@@ -5,19 +5,60 @@ import re
 import shutil
 import sys
 import tomllib
+from pathlib import Path
 
 import jinja2
 import pexpect
+
+
+class ModuleSourceRewriter:
+
+    SOURCE_PATTERN = re.compile(r'(\bsource\s*=\s*")(//)([^"?]+)(\?[^"]*)?(")')
+
+    def __init__(self, root=None):
+        if root is None:
+            root = self.find_git_root()
+
+        self.root = Path(root).resolve() if root else Path.cwd()
+
+    def find_git_root(self):
+        current = Path.cwd()
+
+        while current != current.parent:
+            if (current / ".git").exists():
+                return current
+            current = current.parent
+
+        return None
+
+    def rewrite(self, content):
+        def replacer(match):
+            prefix, _, path, query, suffix = match.groups()
+            query = query or ""
+            absolute_path = self.root / path
+
+            return "{}{}{}{}".format(
+                prefix,
+                absolute_path,
+                query,
+                suffix,
+            )
+
+        return self.SOURCE_PATTERN.sub(replacer, content)
 
 
 class App(object):
 
     config = None
     plugins = None
+    module_rewriter = None
 
     def __init__(self):
         self.load_config()
         self.load_plugins()
+
+        if self.has_git_root():
+            self.module_rewriter = ModuleSourceRewriter()
 
     def load_config(self):
 
@@ -79,6 +120,16 @@ class App(object):
 
                     self.plugins.append(plugin_class())
 
+    def has_git_root(self):
+        current = Path.cwd()
+
+        while current != current.parent:
+            if (current / ".git").exists():
+                return current
+            current = current.parent
+
+        return None
+
     def render(self, tf_file, template_variables):
 
         for plugin in self.plugins:
@@ -89,11 +140,16 @@ class App(object):
                 )
 
         with open(tf_file, "rt") as tf_fp:
+            content = tf_fp.read()
+
+            if self.module_rewriter:
+                content = self.module_rewriter.rewrite(content)
+
             env = jinja2.Environment(
                 loader=jinja2.BaseLoader,
                 undefined=jinja2.StrictUndefined,
             )
-            template = env.from_string(tf_fp.read())
+            template = env.from_string(content)
 
         try:
             rendered = template.render(
