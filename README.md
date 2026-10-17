@@ -82,3 +82,103 @@ terraform {
   }
 }
 ```
+
+Configuration:
+--------------
+
+`terroir` also has a configuration file, which should generally be placed in
+the root of the repo at `.terroir/config.toml`. This configuration file allows
+you set environment variables that will be loaded automatically when `terroir`
+is run with either `terroir --env=staging`  or `TERROIR_ENV=staging terroir`
+(if the named env is staging).
+
+```!toml
+[env]
+DEFAULT_REGION = "us-east-1"
+
+[env.staging]
+AWS_ACCOUNT_ID = "000000000000000"
+
+[env.prod]
+AWS_ACCOUNT_ID = "111111111111111"
+```
+
+This example config will always apply `DEFAULT_REGION` to the environ, and when
+the env is staging, will supply `AWS_ACCOUNT_ID` with the value
+`000000000000000`.
+
+`terroir` also supports plugins. The plugin system allows you to import python
+code, which can then be invoked to update/apply template variables before
+render, or to take actions on a terraform file post rendering. In this way you
+can make further programmatic updates, if necessary. An example config is:
+
+```!toml
+[[plugins]]
+plugin = "terroir_plugin.py"
+```
+
+This will load a file at `.terroir/terroir_plugin.py` as a plugin, an example
+of which is as follows:
+
+```!python
+import datetime
+import os
+import re
+
+
+class Plugin:
+    def update_template_variables(self, template_variables, tf_file=None):
+        template_variables["get_current_time"] = lambda: datetime.datetime.now()
+
+    def post_render_callback(self, rendered, tf_file=None):
+        if os.environ["TERROIR_ENV"] == "staging" and re.search("prod", rendered):
+            raise ValueError("unexpected prod reference in staging env render!")
+```
+
+Plugins can also be written as an arbitrary import of available python code, for example:
+
+```!toml
+[[plugins]]
+plugin = "myterroir.plugins.env::EnvPlugin"
+```
+
+This will perform the equivalent of:
+
+```!python
+from myterroir.plugins.env import EnvPlugin
+plugin = EnvPlugin()
+```
+
+Such a plugin might be written as:
+
+```!python
+import sys
+
+
+class EnvPlugin:
+    def update_template_variables(self, template_variables, tf_file=None):
+        template_variables["sys"] = sys
+```
+
+If the call to `update_template_variables` returns a value, the `template_variables` will be replaced with that value. For example:
+
+```!python
+class Plugin:
+    def update_template_variables(self, template_variables, tf_file=None):
+        return {}
+```
+
+Will result in `template_variables` being set to an empty dictionary.
+
+If the call to `post_render_callback` returns a value, the `rendered` text will be replace with that value. For example:
+
+```!python
+import re
+
+
+class Plugin:
+    def post_render_callback(self, rendered, tf_file=None):
+        return re.sub("production-", "prod-", rendered)
+```
+
+Will result in all instances of `production-` being replaced with `prod-` in the output.

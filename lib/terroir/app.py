@@ -1,3 +1,4 @@
+import copy
 import importlib
 import io
 import os
@@ -5,6 +6,7 @@ import re
 import shutil
 import sys
 import tomllib
+from contextlib import contextmanager
 from pathlib import Path
 
 import jinja2
@@ -45,6 +47,20 @@ class ModuleSourceRewriter:
             )
 
         return self.SOURCE_PATTERN.sub(replacer, content)
+
+
+
+@contextmanager
+def temporary_env(new_vars):
+    # back up the current environment
+    old_env = copy.deepcopy(dict(os.environ))
+    try:
+        os.environ.update(new_vars)
+        yield
+    finally:
+        # restore original environment
+        os.environ.clear()
+        os.environ.update(old_env)
 
 
 class App(object):
@@ -130,48 +146,81 @@ class App(object):
 
         return None
 
-    def render(self, tf_file, template_variables):
+    def render(self, tf_file, template_variables, terroir_env=None):
 
-        for plugin in self.plugins:
-            if hasattr(plugin, "update_template_variables"):
-                plugin.update_template_variables(
-                    template_variables,
-                    tf_file=tf_file,
-                )
-
-        with open(tf_file, "rt") as tf_fp:
-            content = tf_fp.read()
-
-            if self.module_rewriter:
-                content = self.module_rewriter.rewrite(content)
-
-            env = jinja2.Environment(
-                loader=jinja2.BaseLoader,
-                undefined=jinja2.StrictUndefined,
-            )
-            template = env.from_string(content)
-
-        try:
-            rendered = template.render(
-                **template_variables,
-            )
+        new_env = self.get_env(terroir_env)
+        with temporary_env(new_env):
 
             for plugin in self.plugins:
-                if hasattr(plugin, "post_render_callback"):
-                    plugin.post_render_callback(
-                        rendered,
+                if hasattr(plugin, "update_template_variables"):
+                    plugin_var_ret = plugin.update_template_variables(
+                        template_variables,
                         tf_file=tf_file,
                     )
 
-            return rendered
-        except jinja2.exceptions.UndefinedError:
-            sys.stderr.write(
-                "(hint: did you forget define a variable?)\n"
-            )
-            sys.stderr.flush()
-            raise
+                    if plugin_var_ret is not None:
+                        template_variables = plugin_var_ret
+
+            with open(tf_file, "rt") as tf_fp:
+                content = tf_fp.read()
+
+                if self.module_rewriter:
+                    content = self.module_rewriter.rewrite(content)
+
+                env = jinja2.Environment(
+                    loader=jinja2.BaseLoader,
+                    undefined=jinja2.StrictUndefined,
+                )
+                template = env.from_string(content)
+
+            try:
+
+                rendered = template.render(
+                    **template_variables,
+                )
+
+                for plugin in self.plugins:
+                    if hasattr(plugin, "post_render_callback"):
+                        plugin_render_ret = plugin.post_render_callback(
+                            rendered,
+                            tf_file=tf_file,
+                        )
+
+                        if plugin_render_ret is not None:
+                            rendered = plugin_render_ret
+
+                return rendered
+            except jinja2.exceptions.UndefinedError:
+                sys.stderr.write(
+                    "(hint: did you forget define a variable?)\n"
+                )
+                sys.stderr.flush()
+                raise
 
     def run(self, template_variables=None):
+
+        argv = sys.argv[:]
+
+        terroir_env = os.environ.get("TERROIR_ENV") or None
+
+        try:
+            if argv[1].startswith("--env"):
+                # --env=foo
+                if argv[1].startswith("--env="):
+                    env_parts = argv[1].split("=")
+                    terroir_env = env_parts[1]
+
+                    argv = argv[:1] + argv[2:]
+
+                # --env foo
+                else:
+                    terroir_env = argv[2]
+
+                    argv = argv[:1] + argv[3:]
+
+        except IndexError:
+            pass
+
         if template_variables is None:
             template_variables = {}
 
@@ -186,7 +235,7 @@ class App(object):
                 tfbak_files.append(name)
 
         if tfbak_files:
-            if sys.argv[1] == "restore":
+            if argv[1] == "restore":
                 self.restore_tfbak_files(tfbak_files)
             else:
                 sys.stderr.write(
@@ -205,14 +254,14 @@ class App(object):
                 tfbak_file = tf_file + "bak"
                 shutil.copyfile(tf_file, tfbak_file)
 
-                rendered = self.render(tf_file, template_variables)
+                rendered = self.render(tf_file, template_variables, terroir_env=terroir_env)
                 with open(tf_file, "wt") as tf_fp:
                     tf_fp.write(rendered)
 
-            if sys.argv[1] == "--":
-                exitstatus, _ = self.run_command(sys.argv[2:])
+            if argv[1] == "--":
+                exitstatus, _ = self.run_command(argv[2:], terroir_env=terroir_env)
             else:
-                exitstatus, _ = self.run_terraform(sys.argv[1:])
+                exitstatus, _ = self.run_terraform(argv[1:], terroir_env=terroir_env)
 
         finally:
             for tf_file in tf_files:
@@ -220,7 +269,7 @@ class App(object):
                 if os.path.exists(tfbak_file):
                     shutil.copyfile(tfbak_file, tf_file)
                     os.unlink(tfbak_file)
-            if sys.argv[1] == "apply":
+            if argv[1] == "apply":
                 if os.path.exists(".terraform") and os.path.isdir(".terraform"):
                     for dirpath, dirnames, filenames in os.walk(".terraform"):
                         dirnames[:] = [d for d in dirnames if d != "providers"]
@@ -237,7 +286,7 @@ class App(object):
             shutil.copyfile(tfbak_file, tf_file)
             os.unlink(tfbak_file)
 
-    def run_terraform(self, args, retries_remaining=2, echo_output=True):
+    def run_terraform(self, args, retries_remaining=2, echo_output=True, terroir_env=None):
 
         class Capture(object):
 
@@ -251,11 +300,14 @@ class App(object):
             def flush(self):
                 sys.stdout.flush()
 
+        new_env = self.get_env(terroir_env)
+
         process = pexpect.spawn(
             "terraform",
             args=args,
             encoding="utf-8",
-            timeout=None
+            timeout=None,
+            env=new_env,
         )
 
         capture = Capture()
@@ -288,11 +340,13 @@ class App(object):
                 self.run_terraform(
                     ["init"],
                     retries_remaining=(retries_remaining - 1),
+                    terroir_env=terroir_env,
                 )
 
                 return self.run_terraform(
                     args,
                     retries_remaining=(retries_remaining - 1),
+                    terroir_env=terroir_env,
                 )
 
             raise Exception(
@@ -320,7 +374,7 @@ class App(object):
 
         return process.exitstatus, capture.buffer.getvalue()
 
-    def run_command(self, args):
+    def run_command(self, args, terroir_env=None):
 
         exec_path = args[0]
         if "/" not in exec_path:
@@ -328,6 +382,22 @@ class App(object):
             if maybe_exec_path:
                 exec_path = maybe_exec_path
 
-        exitstatus = os.spawnvp(os.P_WAIT, exec_path, args)
+        new_env = self.get_env(terroir_env)
+
+        exitstatus = os.spawnvpe(os.P_WAIT, exec_path, args, new_env)
 
         return exitstatus, None
+
+    def get_env(self, terroir_env):
+        env_copy = os.environ.copy()
+
+        for _, config in self.config:
+            for variable_name, variable_value in config.get("env", {}).items():
+                # nested subkey in toml config
+                if isinstance(variable_value, dict):
+                    if variable_name == terroir_env:
+                        env_copy.update(variable_value)
+                else:
+                    env_copy[variable_name] = variable_value
+
+        return env_copy

@@ -1,11 +1,11 @@
-# Copyright 2019-2022, Ryan P. Kelly.
+# Copyright 2019-2026, Ryan P. Kelly.
 
 from setuptools import setup
 
 
 setup(
     name="terroir",
-    version="0.10",
+    version="0.11",
     description="terraform templating wrapper",
     author="Ryan P. Kelly",
     author_email="ryan@ryankelly.us",
@@ -23,7 +23,7 @@ setup(
     include_package_data=True,
     zip_safe=False,
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 5 - Production/Stable",
         "Environment :: Console",
         "Intended Audience :: Developers",
         "Intended Audience :: System Administrators",
